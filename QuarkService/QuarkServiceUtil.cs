@@ -317,43 +317,11 @@ namespace QuarkService
         }
     }
 
-    public class RegionSyncListenerInfo
-    {
-        public IPAddress Addr;
-        public int Port;
-
-        //TO ADD: reference to RegionInfo that describes the shape/size of the space that the listener is associated with
-
-        public RegionSyncListenerInfo(string addr, int port)
-        {
-            Addr = IPAddress.Parse(addr);
-            Port = port;
-        }
-
-        public bool EqualTo(RegionSyncListenerInfo rsil)
-        {
-            if (Addr == rsil.Addr && Port == rsil.Port)
-                return true;
-            else
-                return false;
-        }
-
-        public override int GetHashCode()
-        {
-            return (Addr.ToString() + Port.ToString()).GetHashCode();
-        }
-
-        public override string ToString()
-        {
-            return Addr.ToString() + ":" + Port.ToString();
-        }
-    }
-
     public class XMLQuarkSubscription
     {
         public string activeQuarks;
         public string passiveQuarks;
         public string syncID;
-        public RegionSyncListenerInfo syncListenerInfo;
+        public string syncListenerAddress;
     }
 }

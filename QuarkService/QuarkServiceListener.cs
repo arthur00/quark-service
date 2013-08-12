@@ -14,7 +14,7 @@ namespace QuarkService
         private static ILog m_log;
         private bool m_running = false;
         private HttpListener m_listener;
-        private List<RegionSyncListenerInfo> m_rootActors = new List<RegionSyncListenerInfo>();
+        private List<string> m_rootActors = new List<string>();
         private Dictionary<string, XMLQuarkSubscription> m_xmlSubscriptions = new Dictionary<string, XMLQuarkSubscription>();
 
         private Dictionary<string, QuarkPublisher> m_quarkSubscriptions = new Dictionary<string, QuarkPublisher>();
@@ -62,9 +62,7 @@ namespace QuarkService
             // DELETEME
                 localIP = "localhost";
                 // For now, using star topology. Every node conects to a parent node. 
-                // TODO: Get root actors information and provide a method that translates quark-to-root parent.
-                RegionSyncListenerInfo root = new RegionSyncListenerInfo("127.0.0.1", 8080);
-                m_rootActors.Add(root);
+                // TODO: Provide a method that translates quark-to-root parent.
             // </DELETEME>
             m_listener.Prefixes.Add("http://" + localIP + ":8080/quark/");
             m_listener.Start();
@@ -77,24 +75,33 @@ namespace QuarkService
                     // Note: The GetContext method blocks while waiting for a request. 
                     HttpListenerContext context = m_listener.GetContext();
                     HttpListenerRequest request = context.Request;
-                    if (request.RawUrl.Contains("subscribe"))
+                    if (request.RawUrl.Contains("/quark/subscribe"))
                     {
-
                         StreamReader reader = new StreamReader(request.InputStream);
                         XmlSerializer deserializer = new XmlSerializer(typeof(XMLQuarkSubscription));
                         XMLQuarkSubscription quarkSub = (XMLQuarkSubscription)deserializer.Deserialize(reader);
                         RegisterActor(quarkSub);
 
-                        // Obtain a response object.
-
                         HttpListenerResponse response = context.Response;
+                        response.StatusCode = 200;
                         Stream output = response.OutputStream;
-                        // Construct a response. 
-                        System.Xml.Serialization.XmlSerializer x = new System.Xml.Serialization.XmlSerializer(m_rootActors.GetType());
-                        x.Serialize(output, m_rootActors);
+
+                        // Default algorithm is set for star topology.
+                        if (request.RawUrl.Contains("/quark/subscribe/actor"))
+                        {
+                            // Construct a response. 
+                            System.Xml.Serialization.XmlSerializer x = new System.Xml.Serialization.XmlSerializer(m_rootActors.GetType());
+                            x.Serialize(output, m_rootActors);
+                        }
+                        else if (request.RawUrl.Contains("/quark/subscribe/root"))
+                        {
+                            m_rootActors.Add(quarkSub.syncListenerAddress);
+                        }
+                        // TODO: Should root actors know about other root actors? Currently, we reply nothing to root actors.
                         output.Close();
+                        response.Close();
                     }
-                    else if (request.RawUrl.Contains("cross"))
+                    else if (request.RawUrl.Contains("/quark/cross"))
                     {
                         m_log.Info("[QUARKSERVICE]: Not Yet implemented");
                     }
@@ -113,7 +120,9 @@ namespace QuarkService
             QuarkPublisher qp;
 
             // Save SyncID to XMLQuarkSubscription, if we need the info later
-            m_xmlSubscriptions.Add(sub.syncID, sub);
+            if (m_xmlSubscriptions.ContainsKey(sub.syncID))
+                UnRegisterActor(sub.syncID);
+            m_xmlSubscriptions[sub.syncID] = sub;
 
             foreach (string quark in activeQuarks)
             {
@@ -133,6 +142,14 @@ namespace QuarkService
                     QuarkSubscriptions.Add(quark, qp);
                 }
                 qp.AddPassiveSubscriber(sub.syncID);
+            }
+        }
+
+        private void UnRegisterActor(string syncId)
+        {
+            foreach (QuarkPublisher qp in QuarkSubscriptions.Values)
+            {
+                qp.RemoveSubscriber(syncId);
             }
         }
     }
