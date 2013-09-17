@@ -3,16 +3,17 @@ using System.Net;
 using log4net;
 using System.Reflection;
 using System.IO;
-using log4net.Config;
 using System.Xml.Serialization;
 using System.Collections.Generic;
 using OpenMetaverse;
 
 namespace QuarkService
 {
+    /// <summary>
+    /// Helper class for quark resolution
+    /// </summary>
     public class SyncQuark
     {
-        private static ILog m_log = LogManager.GetLogger(MethodBase.GetCurrentMethod().DeclaringType);
         public static int SizeX; // Must be set by QuarkManager. Default will be 256.
         public static int SizeY;
         public bool ValidQuark = false; //"false" indicates having not been assigned a location yet
@@ -37,7 +38,6 @@ namespace QuarkService
 
         public SyncQuark(string quarkName)
         {
-            BasicConfigurator.Configure();
             m_quarkName = quarkName;
             DecodeSyncQuarkLoc();
             ComputeMinMax();
@@ -46,7 +46,6 @@ namespace QuarkService
         // Create a SyncQuark given a position in the region domain
         public SyncQuark(Vector3 pos)
         {
-            BasicConfigurator.Configure();
             int locX, locY;
             GetQuarkLocByPosition(pos, out locX, out locY);
             m_quarkLocX = locX;
@@ -192,7 +191,7 @@ namespace QuarkService
                 string[] quarkXY = quarkString.Split(intraQuarkDelimeter);
                 if (quarkXY.Length < 2)
                 {
-                    m_log.WarnFormat("DecodeSyncQuarks: Invalid quark configuration: {0}", quarkString);
+                    //m_log.WarnFormat("DecodeSyncQuarks: Invalid quark configuration: {0}", quarkString);
                     continue;
                 }
                 string qX = quarkXY[0];
@@ -213,7 +212,7 @@ namespace QuarkService
                 }
                 else
                 {
-                    m_log.WarnFormat("DecodeSyncQuarks: Invalid quark configuration: {0}", quarkString);
+                    //m_log.WarnFormat("DecodeSyncQuarks: Invalid quark configuration: {0}", quarkString);
                 }
 
                 string[] yRange = qY.Split(xyDelimeter);
@@ -230,7 +229,7 @@ namespace QuarkService
                 }
                 else
                 {
-                    m_log.WarnFormat("DecodeSyncQuarks: Invalid quark configuration: {0}", quarkString);
+                    //m_log.WarnFormat("DecodeSyncQuarks: Invalid quark configuration: {0}", quarkString);
                 }
 
                 for (int x = xLow; x <= xHigh; x++)
@@ -254,8 +253,12 @@ namespace QuarkService
     /// </summary>
     public class QuarkPublisher
     {
+        //private static ILog m_log = LogManager.GetLogger(MethodBase.GetCurrentMethod().DeclaringType);
         private SyncQuark m_quark;
         private string m_quarkName;
+        private string m_root = "";
+        public string RootActorID { get { return m_root; } }
+        private string LogHeader = "[QUARKPUBLISHER]";
 
         private HashSet<string> m_passiveQuarkSubscribers = new HashSet<string>();
         public HashSet<string> PassiveSubscribers { get { return m_passiveQuarkSubscribers; } }
@@ -267,6 +270,16 @@ namespace QuarkService
         {
             m_quarkName = quark.QuarkName;
             m_quark = quark;
+        }
+
+        public void SetRootActor(string syncID)
+        {
+            if (m_root.Length > 0)
+            {
+                // There is already a root defined for this quark! assuming it was disconnected and replacing.
+                RemoveSubscriber(m_root);
+            }
+            m_root = syncID;
         }
 
         /// <summary>
@@ -298,6 +311,12 @@ namespace QuarkService
             if (m_activeQuarkSubscribers.Contains(syncID))
             {
                 m_activeQuarkSubscribers.Remove(syncID);
+                if (syncID == m_root)
+                {
+                    // Root is gone! Usually not a good sign
+                    m_root = "";
+                    //m_log.ErrorFormat("{0}: Root actor has been removed", LogHeader);
+                }
             }
             if (m_passiveQuarkSubscribers.Contains(syncID))
             {
@@ -317,11 +336,66 @@ namespace QuarkService
         }
     }
 
+    public class RootInfo : RelayActor
+    {
+        public string quarkAddress;
+
+        public RootInfo()
+        {
+        }
+
+        public RootInfo(string syncAdd, string quarkAdd)
+        {
+            syncAddress = syncAdd;
+            quarkAddress = quarkAdd;
+        }
+    }
+    
+
+    public class RelayActor : Actor
+    {
+        public string syncAddress;
+    }
+
+    public class Actor
+    {
+        public HashSet<RootInfo> Roots = new HashSet<RootInfo>();
+        public XMLQuarkSubscription XmlSubscription = null;
+        public HashSet<string> ActiveQuarks = null;
+        public HashSet<string> PassiveQuarks = null;
+    }
+
+
     public class XMLQuarkSubscription
     {
-        public string activeQuarks;
-        public string passiveQuarks;
-        public string syncID;
-        public string syncListenerAddress;
+        public string activeQuarks = "";
+        public string passiveQuarks = "";
+        public string actorID = "";
+        public string syncListenerAddress = "";
+        public string rootAddress = "";
+    }
+
+    public class CurrentCrossings
+    {
+        public CrossingRequest cross;
+        public HashSet<string> actors = new HashSet<string>();
+        public RootInfo rootHandler;
+    }
+
+    [Serializable, XmlRoot("CrossingRequest")]
+    public class CrossingRequest
+    {
+        public long timestamp = 0;
+        public UUID uuid = UUID.Zero;
+        public string curQuark = "";
+        public string prevQuark = "";
+        public string url = "";
+        public string actorID = "";
+    }
+
+    public class CrossingFinished
+    {
+        public string ackActorID = "";
+        public CrossingRequest cross = null;
     }
 }
